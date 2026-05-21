@@ -190,3 +190,7 @@ Touch — relay OFF
 Touch — relay ON (manual, held until sunrise)
 Relay/LED -> ON (manual daytime override)
 ```
+
+## Helpful Links
+[Tasmota config](https://tasmota.github.io/docs/devices/Etekcity-Smart-WiFi-Light-Switch-ESWL01/)
+[ESPHome Config](https://community.home-assistant.io/t/etekcity-eswl01-wifi-switch/141388)
