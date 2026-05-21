@@ -1,4 +1,4 @@
-# SunsetSwitch — Etekcity ESWL01 Sunset/Sunrise Automation
+# SunsetSwitch Daylight Sensor — Etekcity ESWL01 Sunset/Sunrise Automation
 
 Custom firmware for the **Etekcity ESWL01 wireless outlet switch**, replacing the stock firmware with an automatic sunset-to-sunrise controller. The switch turns ON before sunset and OFF after sunrise, calculated daily for a fixed location using NTP time — no cloud service required.
 
