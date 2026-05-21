@@ -11,8 +11,21 @@
 // Credentials are saved to flash and reused automatically on subsequent boots.
 
 // ---------- Hardware ----------
-#define RELAY_PIN   13      // GPIO13 — HIGH = relay ON (nighttime)
-#define LED_PIN      5      // GPIO5  — status LED, mirrors relay state
+#define RELAY_PIN    13     // GPIO13 — HIGH = relay ON (nighttime)
+#define LED_PIN       5     // GPIO5  — status LED, mirrors relay state
+#define TOUCH_PIN    14     // GPIO14 — ADAM02S capacitive sensor, HIGH = touched
+
+// ---------- Schedule offsets ----------
+#define MINUTES_BEFORE_SUNSET  60   // turn ON this many minutes before sunset
+#define MINUTES_AFTER_SUNRISE  60   // turn OFF this many minutes after sunrise
+
+// ---------- Touch override ----------
+// A touch toggles the relay override; a second touch clears it (auto mode resumes).
+bool     overrideActive = false;
+bool     overrideState  = false;    // desired relay state when override is active
+bool     lastTouchState = false;
+unsigned long lastDebounceMs = 0;
+#define DEBOUNCE_MS 300
 
 // ---------- Location: Sammamish, WA ----------
 const float LAT        =  47.6163f;
@@ -110,25 +123,55 @@ bool isNighttime() {
     time_t now = time(nullptr);
     struct tm *t = localtime(&now);
 
-    int  year  = t->tm_year + 1900;
-    int  month = t->tm_mon + 1;
-    int  day   = t->tm_mday;
-    bool dst   = (t->tm_isdst > 0);
+    int  year   = t->tm_year + 1900;
+    int  month  = t->tm_mon + 1;
+    int  day    = t->tm_mday;
+    bool dst    = (t->tm_isdst > 0);
     int  nowMin = t->tm_hour * 60 + t->tm_min;
 
     int sunriseMin = calcSunTime(year, month, day, LAT, LON, UTC_OFFSET, dst, true);
     int sunsetMin  = calcSunTime(year, month, day, LAT, LON, UTC_OFFSET, dst, false);
 
-    Serial.printf("[%04d-%02d-%02d %02d:%02d DST=%d] sunrise=%02d:%02d  sunset=%02d:%02d\n",
+    // Apply offsets: ON before sunset, OFF after sunrise
+    int onMin  = sunsetMin  - MINUTES_BEFORE_SUNSET;
+    int offMin = sunriseMin + MINUTES_AFTER_SUNRISE;
+
+    Serial.printf("[%04d-%02d-%02d %02d:%02d DST=%d] sunrise=%02d:%02d sunset=%02d:%02d  on=%02d:%02d off=%02d:%02d\n",
         year, month, day, t->tm_hour, t->tm_min, (int)dst,
         sunriseMin / 60, sunriseMin % 60,
-        sunsetMin  / 60, sunsetMin  % 60);
+        sunsetMin  / 60, sunsetMin  % 60,
+        onMin  / 60, onMin  % 60,
+        offMin / 60, offMin % 60);
 
-    return (nowMin >= sunsetMin || nowMin < sunriseMin);
+    // ON from onMin (before sunset) through midnight, and from midnight to offMin (after sunrise)
+    return (nowMin >= onMin || nowMin < offMin);
+}
+
+// -------------------------------------------------------
+// Called on each touch event (after debounce).
+// First touch: override ON or OFF (flips current state).
+// Second touch: clear override, resume auto schedule.
+void handleTouch() {
+    if (!overrideActive) {
+        // Read current relay state and flip it
+        overrideState  = !digitalRead(RELAY_PIN);
+        overrideActive = true;
+        Serial.printf("Touch override ON — relay forced %s\n", overrideState ? "ON" : "OFF");
+    } else {
+        overrideActive = false;
+        Serial.println("Touch override cleared — resuming auto schedule");
+    }
+    bool state = overrideActive ? overrideState : (bool)digitalRead(RELAY_PIN);
+    digitalWrite(RELAY_PIN, state ? HIGH : LOW);
+    digitalWrite(LED_PIN,   state ? HIGH : LOW);
 }
 
 // -------------------------------------------------------
 void updateRelay() {
+    if (overrideActive) {
+        lastRelayCheck = millis();
+        return;     // manual override in effect; skip auto logic
+    }
     bool night = isNighttime();
     digitalWrite(RELAY_PIN, night ? HIGH : LOW);
     digitalWrite(LED_PIN,   night ? HIGH : LOW);
@@ -140,9 +183,10 @@ void updateRelay() {
 void setup() {
     Serial.begin(115200);
     pinMode(RELAY_PIN, OUTPUT);
-    pinMode(LED_PIN, OUTPUT);
+    pinMode(LED_PIN,   OUTPUT);
+    pinMode(TOUCH_PIN, INPUT);
     digitalWrite(RELAY_PIN, LOW);   // safe default until time is known
-    digitalWrite(LED_PIN, LOW);
+    digitalWrite(LED_PIN,   LOW);
 
     connectWiFi();
     syncNTP();
@@ -152,6 +196,14 @@ void setup() {
 // -------------------------------------------------------
 void loop() {
     unsigned long now = millis();
+
+    // Capacitive touch detection with debounce
+    bool touched = digitalRead(TOUCH_PIN);
+    if (touched && !lastTouchState && (now - lastDebounceMs > DEBOUNCE_MS)) {
+        lastDebounceMs = now;
+        handleTouch();
+    }
+    lastTouchState = touched;
 
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi lost — reconnecting...");
@@ -167,6 +219,6 @@ void loop() {
         updateRelay();
     }
 
-    delay(1000);
+    delay(10);  // short delay to keep touch responsive
 }
 
