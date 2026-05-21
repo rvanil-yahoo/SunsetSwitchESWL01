@@ -48,7 +48,7 @@ RX           ──────  TX  (GPIO1)
 ### Flash Steps
 
 1. Open the ESWL01 enclosure and locate the ESP-12E module's UART pads on the PCB.
-2. Solder wires to `TX`, `RX`, `GND`, `3.3V`, and `GPIO0`.
+2. Solder header pins to `TX`, `RX`, `GND`, `3.3V`, and `GPIO0`.
 3. Connect your USB-TTL adapter as shown above.
 4. Hold `GPIO0` LOW (connect to GND) **before** powering the board to enter bootloader mode.
 5. In PlatformIO, run:
@@ -56,6 +56,8 @@ RX           ──────  TX  (GPIO1)
    pio run --target upload
    ```
 6. After flashing, disconnect `GPIO0` from GND and reboot the device.
+
+<img width="400" height="906" alt="image" src="https://github.com/user-attachments/assets/7d0da9de-cf5e-4d54-9fb1-f47718a3a516" />
 
 ---
 
