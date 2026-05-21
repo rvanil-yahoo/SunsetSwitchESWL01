@@ -57,7 +57,7 @@ RX           ──────  TX  (GPIO1)
    ```
 6. After flashing, disconnect `GPIO0` from GND and reboot the device.
 
-<img width="400" height="906" alt="image" src="https://github.com/user-attachments/assets/7d0da9de-cf5e-4d54-9fb1-f47718a3a516" />
+<img width="400"  alt="image" src="https://github.com/user-attachments/assets/7d0da9de-cf5e-4d54-9fb1-f47718a3a516" />
 
 ---
 
