@@ -38,6 +38,7 @@ const int   UTC_OFFSET = -8;        // PST base; DST handled via TZ string
 
 unsigned long lastNtpSync    = 0;
 unsigned long lastRelayCheck = 0;
+int           lastDay        = -1;  // tracks calendar day to detect midnight rollover
 
 // -------------------------------------------------------
 // Sunrise/sunset algorithm (NOAA simplified)
@@ -196,6 +197,17 @@ void loop() {
         handleTouch();
     }
     lastTouchState = touched;
+
+    // Clear touch override at midnight so auto schedule resumes each new day
+    time_t tnow = time(nullptr);
+    struct tm *lt = localtime(&tnow);
+    int today = lt->tm_mday;
+    if (lastDay != -1 && today != lastDay && overrideActive) {
+        overrideActive = false;
+        overrideState  = false;
+        Serial.println("Midnight — touch override cleared, resuming auto schedule");
+    }
+    lastDay = today;
 
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi lost — reconnecting...");
