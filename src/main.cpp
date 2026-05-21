@@ -1,17 +1,167 @@
 #include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <time.h>
+#include <math.h>
 
-#define BLINK_PIN 5        // GPIO5
-#define BLINK_INTERVAL 500 // milliseconds
+// ---------- WiFi Credentials ----------
+#define WIFI_SSID   "YOUR_SSID"
+#define WIFI_PASS   "YOUR_PASSWORD"
 
+// ---------- Hardware ----------
+#define RELAY_PIN   13      // GPIO13 — HIGH = relay ON (nighttime)
+#define LED_PIN      5      // GPIO5  — status LED, mirrors relay state
+
+// ---------- Location: Sammamish, WA ----------
+const float LAT        =  47.6163f;
+const float LON        = -122.0356f;
+const int   UTC_OFFSET = -8;        // PST base; DST handled via TZ string
+
+// ---------- Timing ----------
+#define NTP_SYNC_INTERVAL_MS   (60UL * 60UL * 1000UL)  // re-sync NTP every hour
+#define RELAY_CHECK_INTERVAL_MS (60UL * 1000UL)         // evaluate relay every minute
+
+unsigned long lastNtpSync    = 0;
+unsigned long lastRelayCheck = 0;
+
+// -------------------------------------------------------
+// Sunrise/sunset algorithm (NOAA simplified)
+// Returns minutes from local midnight, or -1 on polar day/night.
+// -------------------------------------------------------
+static int calcSunTime(int year, int month, int day,
+                       float lat, float lon,
+                       int utcOffset, bool isDST, bool isRise) {
+    const float DEG = M_PI / 180.0f;
+
+    int n1 = (int)(275.0f * month / 9.0f);
+    int n2 = (int)((month + 9.0f) / 12.0f);
+    int n3 = 1 + (int)((year - 4 * (year / 4) + 2) / 3.0f);
+    int N  = n1 - n2 * n3 + day - 30;
+
+    float lngHour = lon / 15.0f;
+    float t = N + ((isRise ? 6.0f : 18.0f) - lngHour) / 24.0f;
+
+    float M = (0.9856f * t) - 3.289f;
+
+    float L = M + (1.916f * sinf(M * DEG)) + (0.020f * sinf(2.0f * M * DEG)) + 282.634f;
+    while (L >= 360.0f) L -= 360.0f;
+    while (L <    0.0f) L += 360.0f;
+
+    float RA = (1.0f / DEG) * atanf(0.91764f * tanf(L * DEG));
+    while (RA >= 360.0f) RA -= 360.0f;
+    while (RA <    0.0f) RA += 360.0f;
+    RA = (RA + (floorf(L / 90.0f) * 90.0f - floorf(RA / 90.0f) * 90.0f)) / 15.0f;
+
+    float sinDec = 0.39782f * sinf(L * DEG);
+    float cosDec = cosf(asinf(sinDec));
+
+    float cosH = (cosf(90.833f * DEG) - sinDec * sinf(lat * DEG))
+                 / (cosDec * cosf(lat * DEG));
+    if (cosH > 1.0f || cosH < -1.0f) return -1;
+
+    float H = isRise ? (360.0f - (1.0f / DEG) * acosf(cosH))
+                     : (         (1.0f / DEG) * acosf(cosH));
+    H /= 15.0f;
+
+    float T  = H + RA - (0.06571f * t) - 6.622f;
+    float UT = T - lngHour;
+    while (UT >= 24.0f) UT -= 24.0f;
+    while (UT <   0.0f) UT += 24.0f;
+
+    float local = UT + utcOffset + (isDST ? 1.0f : 0.0f);
+    while (local >= 24.0f) local -= 24.0f;
+    while (local <   0.0f) local += 24.0f;
+
+    return (int)(local * 60.0f);
+}
+
+// -------------------------------------------------------
+void connectWiFi() {
+    Serial.printf("\nConnecting to %s", WIFI_SSID);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.printf("\nWiFi connected — IP: %s\n", WiFi.localIP().toString().c_str());
+}
+
+// -------------------------------------------------------
+void syncNTP() {
+    // POSIX TZ handles PST/PDT transitions automatically
+    configTime("PST8PDT,M3.2.0,M11.1.0", "pool.ntp.org", "time.nist.gov");
+    Serial.print("Syncing NTP");
+    time_t now = time(nullptr);
+    while (now < 100000UL) {
+        delay(500);
+        Serial.print(".");
+        now = time(nullptr);
+    }
+    Serial.println(" done");
+    lastNtpSync = millis();
+}
+
+// -------------------------------------------------------
+bool isNighttime() {
+    time_t now = time(nullptr);
+    struct tm *t = localtime(&now);
+
+    int  year  = t->tm_year + 1900;
+    int  month = t->tm_mon + 1;
+    int  day   = t->tm_mday;
+    bool dst   = (t->tm_isdst > 0);
+    int  nowMin = t->tm_hour * 60 + t->tm_min;
+
+    int sunriseMin = calcSunTime(year, month, day, LAT, LON, UTC_OFFSET, dst, true);
+    int sunsetMin  = calcSunTime(year, month, day, LAT, LON, UTC_OFFSET, dst, false);
+
+    Serial.printf("[%04d-%02d-%02d %02d:%02d DST=%d] sunrise=%02d:%02d  sunset=%02d:%02d\n",
+        year, month, day, t->tm_hour, t->tm_min, (int)dst,
+        sunriseMin / 60, sunriseMin % 60,
+        sunsetMin  / 60, sunsetMin  % 60);
+
+    return (nowMin >= sunsetMin || nowMin < sunriseMin);
+}
+
+// -------------------------------------------------------
+void updateRelay() {
+    bool night = isNighttime();
+    digitalWrite(RELAY_PIN, night ? HIGH : LOW);
+    digitalWrite(LED_PIN,   night ? HIGH : LOW);
+    Serial.printf("Relay/LED -> %s\n", night ? "ON (night)" : "OFF (day)");
+    lastRelayCheck = millis();
+}
+
+// -------------------------------------------------------
 void setup() {
     Serial.begin(115200);
-    pinMode(BLINK_PIN, OUTPUT);
-    Serial.println("Blink started on GPIO5");
+    pinMode(RELAY_PIN, OUTPUT);
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(RELAY_PIN, LOW);   // safe default until time is known
+    digitalWrite(LED_PIN, LOW);
+
+    connectWiFi();
+    syncNTP();
+    updateRelay();
 }
 
+// -------------------------------------------------------
 void loop() {
-    digitalWrite(BLINK_PIN, HIGH);
-    delay(BLINK_INTERVAL);
-    digitalWrite(BLINK_PIN, LOW);
-    delay(BLINK_INTERVAL);
+    unsigned long now = millis();
+
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi lost — reconnecting...");
+        connectWiFi();
+    }
+
+    if (now - lastNtpSync >= NTP_SYNC_INTERVAL_MS) {
+        syncNTP();
+    }
+
+    if (now - lastRelayCheck >= RELAY_CHECK_INTERVAL_MS) {
+        updateRelay();
+    }
+
+    delay(1000);
 }
+
