@@ -9,7 +9,7 @@ Custom firmware for the **Etekcity ESWL01 wireless outlet switch**, replacing th
 ### Etekcity ESWL01
 The ESWL01 is a WIFI controlled outlet switch that contains an **ESP8266 ESP-12E** module on its internal control board. This makes it flashable with custom Arduino/PlatformIO firmware via its UART pins.
 
-<img width="1461" height="1294" alt="image" src="https://github.com/user-attachments/assets/2229a1d8-9b64-4f88-9705-80ad3ca7f45b" />
+<img width="600" alt="Etekcity ESWL01" src="https://github.com/user-attachments/assets/2229a1d8-9b64-4f88-9705-80ad3ca7f45b" />
 
 ### Pin Mapping (ESWL01 Internal Board)
 
