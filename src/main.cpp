@@ -20,6 +20,9 @@
 #define MINUTES_AFTER_SUNRISE  60   // turn OFF this many minutes after sunrise
 
 // ---------- Touch ----------
+// manualOn: user turned switch ON during daytime; keep it ON until
+// they touch again (to turn off) or the schedule's OFF time (sunrise+1hr) clears it.
+bool          manualOn       = false;
 bool          lastTouchState = false;
 unsigned long lastDebounceMs = 0;
 #define DEBOUNCE_MS 300
@@ -146,20 +149,46 @@ bool isNighttime() {
 }
 
 // -------------------------------------------------------
-// Instantly flip relay and LED; auto schedule will correct on next evaluation.
+// Touch logic:
+//   - Switch is ON  → turn OFF immediately (clears manualOn too)
+//   - Switch is OFF → turn ON and set manualOn so schedule won't kill it
 void handleTouch() {
-    bool state = !digitalRead(RELAY_PIN);
-    digitalWrite(RELAY_PIN, state ? HIGH : LOW);
-    digitalWrite(LED_PIN,   state ? HIGH : LOW);
-    Serial.printf("Touch — relay toggled %s\n", state ? "ON" : "OFF");
+    bool currentlyOn = digitalRead(RELAY_PIN);
+    if (currentlyOn) {
+        manualOn = false;
+        digitalWrite(RELAY_PIN, LOW);
+        digitalWrite(LED_PIN,   LOW);
+        Serial.println("Touch — relay OFF");
+    } else {
+        manualOn = true;
+        digitalWrite(RELAY_PIN, HIGH);
+        digitalWrite(LED_PIN,   HIGH);
+        Serial.println("Touch — relay ON (manual, held until sunrise)");
+    }
 }
 
 // -------------------------------------------------------
 void updateRelay() {
     bool night = isNighttime();
-    digitalWrite(RELAY_PIN, night ? HIGH : LOW);
-    digitalWrite(LED_PIN,   night ? HIGH : LOW);
-    Serial.printf("Relay/LED -> %s\n", night ? "ON (night)" : "OFF (day)");
+
+    if (night) {
+        // Scheduled ON window — schedule takes priority, clear any daytime manual flag
+        manualOn = false;
+        digitalWrite(RELAY_PIN, HIGH);
+        digitalWrite(LED_PIN,   HIGH);
+        Serial.println("Relay/LED -> ON (scheduled night)");
+    } else if (manualOn) {
+        // Daytime but user manually turned on — keep ON
+        digitalWrite(RELAY_PIN, HIGH);
+        digitalWrite(LED_PIN,   HIGH);
+        Serial.println("Relay/LED -> ON (manual daytime override)");
+    } else {
+        // Daytime, no override — turn OFF
+        digitalWrite(RELAY_PIN, LOW);
+        digitalWrite(LED_PIN,   LOW);
+        Serial.println("Relay/LED -> OFF (day)");
+    }
+
     lastRelayCheck = millis();
 }
 
