@@ -148,22 +148,14 @@ bool isNighttime() {
 }
 
 // -------------------------------------------------------
-// Called on each touch event (after debounce).
-// First touch: override ON or OFF (flips current state).
-// Second touch: clear override, resume auto schedule.
+// Each touch toggles the relay ON/OFF and locks it in override mode.
+// Override persists until reboot (auto schedule is suspended after first touch).
 void handleTouch() {
-    if (!overrideActive) {
-        // Read current relay state and flip it
-        overrideState  = !digitalRead(RELAY_PIN);
-        overrideActive = true;
-        Serial.printf("Touch override ON — relay forced %s\n", overrideState ? "ON" : "OFF");
-    } else {
-        overrideActive = false;
-        Serial.println("Touch override cleared — resuming auto schedule");
-    }
-    bool state = overrideActive ? overrideState : (bool)digitalRead(RELAY_PIN);
-    digitalWrite(RELAY_PIN, state ? HIGH : LOW);
-    digitalWrite(LED_PIN,   state ? HIGH : LOW);
+    overrideActive = true;
+    overrideState  = !overrideState;
+    digitalWrite(RELAY_PIN, overrideState ? HIGH : LOW);
+    digitalWrite(LED_PIN,   overrideState ? HIGH : LOW);
+    Serial.printf("Touch override — relay %s\n", overrideState ? "ON" : "OFF");
 }
 
 // -------------------------------------------------------
