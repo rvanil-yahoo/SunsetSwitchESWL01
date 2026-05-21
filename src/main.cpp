@@ -19,11 +19,8 @@
 #define MINUTES_BEFORE_SUNSET  60   // turn ON this many minutes before sunset
 #define MINUTES_AFTER_SUNRISE  60   // turn OFF this many minutes after sunrise
 
-// ---------- Touch override ----------
-// A touch toggles the relay override; a second touch clears it (auto mode resumes).
-bool     overrideActive = false;
-bool     overrideState  = false;    // desired relay state when override is active
-bool     lastTouchState = false;
+// ---------- Touch ----------
+bool          lastTouchState = false;
 unsigned long lastDebounceMs = 0;
 #define DEBOUNCE_MS 300
 
@@ -38,7 +35,7 @@ const int   UTC_OFFSET = -8;        // PST base; DST handled via TZ string
 
 unsigned long lastNtpSync    = 0;
 unsigned long lastRelayCheck = 0;
-int           lastDay        = -1;  // tracks calendar day to detect midnight rollover
+
 
 // -------------------------------------------------------
 // Sunrise/sunset algorithm (NOAA simplified)
@@ -149,22 +146,16 @@ bool isNighttime() {
 }
 
 // -------------------------------------------------------
-// Each touch toggles the relay ON/OFF and locks it in override mode.
-// Override persists until reboot (auto schedule is suspended after first touch).
+// Instantly flip relay and LED; auto schedule will correct on next evaluation.
 void handleTouch() {
-    overrideActive = true;
-    overrideState  = !overrideState;
-    digitalWrite(RELAY_PIN, overrideState ? HIGH : LOW);
-    digitalWrite(LED_PIN,   overrideState ? HIGH : LOW);
-    Serial.printf("Touch override — relay %s\n", overrideState ? "ON" : "OFF");
+    bool state = !digitalRead(RELAY_PIN);
+    digitalWrite(RELAY_PIN, state ? HIGH : LOW);
+    digitalWrite(LED_PIN,   state ? HIGH : LOW);
+    Serial.printf("Touch — relay toggled %s\n", state ? "ON" : "OFF");
 }
 
 // -------------------------------------------------------
 void updateRelay() {
-    if (overrideActive) {
-        lastRelayCheck = millis();
-        return;     // manual override in effect; skip auto logic
-    }
     bool night = isNighttime();
     digitalWrite(RELAY_PIN, night ? HIGH : LOW);
     digitalWrite(LED_PIN,   night ? HIGH : LOW);
@@ -197,17 +188,6 @@ void loop() {
         handleTouch();
     }
     lastTouchState = touched;
-
-    // Clear touch override at midnight so auto schedule resumes each new day
-    time_t tnow = time(nullptr);
-    struct tm *lt = localtime(&tnow);
-    int today = lt->tm_mday;
-    if (lastDay != -1 && today != lastDay && overrideActive) {
-        overrideActive = false;
-        overrideState  = false;
-        Serial.println("Midnight — touch override cleared, resuming auto schedule");
-    }
-    lastDay = today;
 
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi lost — reconnecting...");
