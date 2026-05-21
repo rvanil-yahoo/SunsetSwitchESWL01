@@ -192,5 +192,6 @@ Relay/LED -> ON (manual daytime override)
 ```
 
 ## Helpful Links
-[Tasmota config](https://tasmota.github.io/docs/devices/Etekcity-Smart-WiFi-Light-Switch-ESWL01/)
-[ESPHome Config](https://community.home-assistant.io/t/etekcity-eswl01-wifi-switch/141388)
+- [Tasmota config](https://tasmota.github.io/docs/devices/Etekcity-Smart-WiFi-Light-Switch-ESWL01/)
+- [ESPHome Config](https://community.home-assistant.io/t/etekcity-eswl01-wifi-switch/141388)
+- [Hackaday project](https://hackaday.com/2019/04/22/hack-my-house-ul-certification-and-turning-the-lights-on-with-an-esp8266/)
