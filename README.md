@@ -1,6 +1,6 @@
 # SunsetSwitch — Etekcity ESWL01 Sunset/Sunrise Automation
 
-Custom firmware for the **Etekcity ESWL01 wireless outlet switch**, replacing the stock firmware with an automatic sunset-to-sunrise controller. The switch turns ON at sunset and OFF at sunrise, calculated daily for a fixed location using NTP time — no cloud service required.
+Custom firmware for the **Etekcity ESWL01 wireless outlet switch**, replacing the stock firmware with an automatic sunset-to-sunrise controller. The switch turns ON before sunset and OFF after sunrise, calculated daily for a fixed location using NTP time — no cloud service required.
 
 ---
 
@@ -11,13 +11,14 @@ The ESWL01 is a 433 MHz RF-controlled outlet switch that contains an **ESP8266 E
 
 ### Pin Mapping (ESWL01 Internal Board)
 
-| Function        | ESP8266 GPIO | Notes                          |
-|-----------------|-------------|--------------------------------|
-| Relay control   | GPIO13      | HIGH = relay ON, LOW = relay OFF |
-| Status LED      | GPIO5       | Mirrors relay state             |
-| UART TX         | GPIO1 (TX)  | For flashing / serial monitor   |
-| UART RX         | GPIO3 (RX)  | For flashing / serial monitor   |
-| Flash mode      | GPIO0       | Pull LOW at boot to enter flash mode |
+| Function               | ESP8266 GPIO | Notes                                   |
+|------------------------|-------------|-----------------------------------------|
+| Relay control          | GPIO13      | HIGH = relay ON, LOW = relay OFF        |
+| Status LED             | GPIO5       | Mirrors relay state                     |
+| Capacitive touch input | GPIO14      | ADAM02S sensor — HIGH = touched         |
+| UART TX                | GPIO1 (TX)  | For flashing / serial monitor           |
+| UART RX                | GPIO3 (RX)  | For flashing / serial monitor           |
+| Flash mode             | GPIO0       | Pull LOW at boot to enter flash mode    |
 
 ---
 
@@ -85,9 +86,19 @@ Boot
  └─ WiFiManager → connect to WiFi
      └─ NTP sync (pool.ntp.org / time.nist.gov)
          └─ Calculate today's sunrise & sunset for Sammamish, WA
-             └─ Every 60 seconds: evaluate current time
-                 ├─ After sunset / before sunrise → Relay ON, LED ON
-                 └─ After sunrise / before sunset → Relay OFF, LED OFF
+             └─ Every 60 seconds: evaluate schedule
+                 ├─ Nighttime window → Relay ON, LED ON  (clears any manual override)
+                 ├─ Daytime + manual override → Relay ON, LED ON
+                 └─ Daytime, no override → Relay OFF, LED OFF
+```
+
+### Schedule
+The relay turns **ON 60 minutes before sunset** and **OFF 60 minutes after sunrise**.  
+Both offsets are configurable via constants in `src/main.cpp`:
+
+```cpp
+#define MINUTES_BEFORE_SUNSET  60
+#define MINUTES_AFTER_SUNRISE  60
 ```
 
 ### Sunrise/Sunset Calculation
@@ -106,6 +117,21 @@ Uses the **NOAA simplified solar algorithm** implemented directly in firmware (n
 ### Relay Evaluation
 - Relay state is re-evaluated every **60 seconds**
 - Serial monitor (115200 baud) logs current time, sunrise/sunset times, and relay state on each evaluation
+
+---
+
+## Capacitive Touch Override (ADAM02S — GPIO14)
+
+The touch sensor allows manual control without disrupting the automatic schedule.
+
+| Switch state | Touch action | Result |
+|---|---|---|
+| OFF (daytime) | Tap | Turns **ON**, stays ON until next touch or schedule's OFF time |
+| ON (manual or scheduled) | Tap | Turns **OFF** immediately |
+| Night schedule activates | — | Turns ON automatically, clears any manual state |
+| Sunrise + 1hr (schedule OFF) | — | Turns OFF automatically, ready for next manual use |
+
+This means you can turn the light on manually during the day and it will **stay on until you tap again**, or it will turn off automatically at the next sunrise transition — whichever comes first.
 
 ---
 
@@ -152,8 +178,11 @@ SunsetSwitchESWL01/
 ```
 WiFi connected — IP: 192.168.1.42
 Syncing NTP.... done
-[2025-11-15 17:02 DST=0] sunrise=07:23  sunset=16:28
-Relay/LED -> ON (night)
-[2025-11-15 17:03 DST=0] sunrise=07:23  sunset=16:28
-Relay/LED -> ON (night)
+[2025-11-15 16:28 DST=0] sunrise=07:23 sunset=16:28  on=15:28 off=08:23
+Relay/LED -> ON (scheduled night)
+[2025-11-15 16:29 DST=0] sunrise=07:23 sunset=16:28  on=15:28 off=08:23
+Relay/LED -> ON (scheduled night)
+Touch — relay OFF
+Touch — relay ON (manual, held until sunrise)
+Relay/LED -> ON (manual daytime override)
 ```
