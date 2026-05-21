@@ -1,11 +1,14 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+#include <WiFiManager.h>
 #include <time.h>
 #include <math.h>
 
-// ---------- WiFi Credentials ----------
-#define WIFI_SSID   "YOUR_SSID"
-#define WIFI_PASS   "YOUR_PASSWORD"
+// ---------- WiFi — credentials managed by WiFiManager (no hardcoded secrets) ----------
+// On first boot: connect to "SunsetSwitch-Setup" AP and enter credentials via browser.
+// Credentials are saved to flash and reused automatically on subsequent boots.
 
 // ---------- Hardware ----------
 #define RELAY_PIN   13      // GPIO13 — HIGH = relay ON (nighttime)
@@ -76,14 +79,15 @@ static int calcSunTime(int year, int month, int day,
 
 // -------------------------------------------------------
 void connectWiFi() {
-    Serial.printf("\nConnecting to %s", WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
+    WiFiManager wm;
+    // If saved credentials fail, start "SunsetSwitch-Setup" AP for 3 minutes.
+    // Open http://192.168.4.1 on your phone to enter WiFi credentials.
+    wm.setConfigPortalTimeout(180);
+    if (!wm.autoConnect("SunsetSwitch-Setup")) {
+        Serial.println("WiFiManager timed out — rebooting");
+        ESP.restart();
     }
-    Serial.printf("\nWiFi connected — IP: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("WiFi connected — IP: %s\n", WiFi.localIP().toString().c_str());
 }
 
 // -------------------------------------------------------
@@ -151,7 +155,8 @@ void loop() {
 
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi lost — reconnecting...");
-        connectWiFi();
+        WiFi.reconnect();
+        delay(5000);
     }
 
     if (now - lastNtpSync >= NTP_SYNC_INTERVAL_MS) {
